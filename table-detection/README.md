@@ -53,16 +53,60 @@ https://universe.roboflow.com/celebalworkspace-bqx5k/table-03wsy/dataset/1
 
 ---
 
+# Label Studio
+
+数据标注工具，用于自制数据集或补充标注。
+
+需在虚拟环境中安装：
+
+```bash
+pip install label-studio
+```
+
+新建脚本文件让 Label Studio 能访问本地图片，二选一：
+
+**① start_label_studio.bat**
+
+```bat
+@echo off
+call conda activate yolo_tutorial
+set LOCAL_FILES_SERVING_ENABLED=true
+label-studio
+```
+
+**② start_label_studio.ps1（右键PowerShell启动）**
+
+```powershell
+conda activate yolo_tutorial
+$env:LOCAL_FILES_SERVING_ENABLED="true"
+label-studio
+```
+
+将以上内容分别保存为对应文件，启动时双击或运行：
+
+```cmd
+:: CMD
+start_label_studio.bat
+```
+
+```powershell
+# PowerShell
+.\start_label_studio.ps1
+```
+
+---
+
 # Project Structure
 
 ```
 table-detection/
-├── train.py          # 训练脚本（含数据集抽样）
-├── test_train.py     # 学习率对比实验（踩坑点见下方）
-├── predict.py        # 推理脚本
-├── check.py          # 数据集分布检查
-├── colab.ipynb       # Colab 版本（与 .py 对应）
-└── datasets/         # 数据集（Roboflow YOLO 格式）
+├── train.py                # 训练脚本（含数据集抽样）
+├── test_train.py           # 学习率对比实验（踩坑点见下方）
+├── predict.py              # 推理脚本
+├── check.py                # 数据集分布检查
+├── colab.ipynb             # Colab 版本（与 .py 对应）
+├── start_label_studio.ps1  # Label Studio 启动脚本
+└── datasets/               # 数据集（Roboflow YOLO 格式）
 ```
 
 ---
@@ -114,101 +158,74 @@ model.export(format="onnx")
 
 # Some Notes / Problems
 
-## 1. lr0 没生效 — optimizer="auto" 的陷阱
+## 1. lr0 未生效 — optimizer="auto" 的陷阱
 
-### 现象
+做学习率对比实验时，设置了 `lr0=0.001, 0.005, 0.01, 0.02`，但 loss、mAP、precision 结果完全一致，相当于只跑了一次。
 
-做学习率对比实验时，`lr0=0.001, 0.005, 0.01, 0.02` 的结果完全一样：
-- loss 一模一样
-- mAP 一模一样
-- precision 一模一样
-
-本质上其实是同一次训练。
-
-### 原因
-
-YOLO 新版本默认 `optimizer="auto"`，它会自动选择优化器并**覆盖**你手动设置的 `lr0`。
-
-关键日志证据：
+**原因**：YOLO 默认 `optimizer="auto"` 会自行选择优化器并覆盖手动设置的 `lr0`。训练日志可见：
 
 ```text
 optimizer: 'optimizer=auto' found, ignoring 'lr0=0.005'
 optimizer: AdamW(lr=0.000667, momentum=0.9)
 ```
 
-可见实际生效的是 `AdamW(lr=0.000667)`，你设的 `lr0` 全被忽略了。
+实际生效的是 `AdamW(lr=0.000667)`，手动传入的 `lr0` 参数被静默忽略。
 
-### 解决
-
-必须**显式指定优化器**，不能依赖 auto：
+**解决**：显式指定优化器：
 
 ```python
-# 方法1: SGD + 手动学习率
-model.train(optimizer="SGD", lr0=0.01)
-
-# 方法2: AdamW + 手动学习率
-model.train(optimizer="AdamW", lr0=0.001)
+model.train(optimizer="SGD", lr0=0.01)    # SGD 生效
+model.train(optimizer="AdamW", lr0=0.001) # AdamW 生效
 ```
 
-详见 [test_train.py](table-detection/test_train.py) 中的实验代码（踩坑版）与 [train.py](table-detection/train.py)（正确版）。
+详见 [test_train.py](test_train.py)（踩坑版）与 [train.py](train.py)（正确版）。
 
 ---
 
-## 2. Mosaic 会影响收敛
+## 2. 本地部署容易炸显存
 
-开启 Mosaic 后：
+本地 GPU 显存有限（尤其是笔记本），训练时很容易 OOM（out of memory）。
 
-- 小目标效果更好
-- 泛化更强
+**解决方式**：
 
-但：
+- **降低 batch**：把 `batch=16` 降到 `batch=8` 或 `batch=4`，显存占用直线下降
+- **减小 imgsz**：`imgsz=640` 降到 `imgsz=320`
+- **换 Colab**：免费 GPU（T4/K100）足够跑 YOLO，完全不存在显存问题
 
-- loss 波动更大
-- 后期收敛变慢
+### Colab 部署要注意改路径
 
-YOLO 默认会在最后几个 epoch 自动关闭 Mosaic：
+本地脚本和 Colab 笔记本的文件结构不同，直接跑会找不到数据集。需要改两处：
 
-```text
-Closing dataloader mosaic
+**① 数据路径**：从相对路径改为 Google Drive 绝对路径
+
+```python
+# 本地（相对路径）
+SRC_ROOT = Path('datasets')
+
+# Colab（挂载 Drive 后的绝对路径），此处为google云端硬盘上传后的路径，具体根据实际情况修改
+SRC_ROOT = Path('/content/drive/MyDrive/datasets')
 ```
 
----
+**② data.yaml**：必须重新生成，因为里面写死了 `path` 字段
 
-## 3. 数据量太小
+Colab 中手动指定 yaml 内容：
 
-目前数据集只有 200+ 图片。
+```python
+data_yaml = {
+    "path": str(DST_ROOT),            # 指向 Drive 上的路径
+    "train": "train/images",
+    "val": "valid/images",
+    "nc": 11,
+    "names": ['book', 'bottole', 'earphone', 'glass', 'headphone',
+              'keyboard', 'laptop', 'mobile', 'mouse', 'pen', 'penstand']
+}
 
-问题：
+with open(DST_ROOT / "data.yaml", 'w') as f:
+    yaml.dump(data_yaml, f)
+```
 
-- 容易过拟合
-- 泛化一般
-- 实际摄像头效果不稳定
+> 详细对比见 [colab.ipynb](colab.ipynb) 中的写法与 [train.py](train.py) 的区别。
 
-后续准备继续扩充：
-
-- 不同光照
-- 不同角度
-- 遮挡
-- 夜间环境
-
----
-
-## 4. mAP 不代表真实效果
-
-有时候：
-
-- val mAP 看起来不错
-
-但：
-
-- 实时摄像头漏检严重
-
-所以后面会更关注：
-
-- 实际推理效果
-- 漏检
-- 误检
-- FPS
 
 ---
 
