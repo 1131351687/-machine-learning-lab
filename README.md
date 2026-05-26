@@ -17,7 +17,7 @@
 
 LLM 输出对比分类任务。对两个模型的 response 进行分类（A 胜 / B 胜 / 平局），尝试 TF-IDF + 逻辑回归 和 BERT 特征提取两种方案。
 
-- **来源**：Kaggle 竞赛 | [链接](https://www.kaggle.com/competitions/llm-classification-finetuning)
+- **来源**：Kaggle 竞赛 + GitHub 参考 | [Kaggle](https://www.kaggle.com/competitions/llm-classification-finetuning) / [GitHub](https://github.com/Nawres2020/LLM-Classification-Finetuning)
 - **涉及内容**: scikit-learn, HuggingFace Transformers, BERT, TF-IDF
 
 ### 3. [问答系统](问答系统/) — 2026-04
