@@ -9,6 +9,7 @@ import yaml
 
 SRC_ROOT=Path('datasets') # 原始数据集目录
 DST_ROOT=Path('datasets_subset') # 处理的数据集
+NOW_ROOT=SRC_ROOT   # 当前数据集目录，默认为原始数据集目录
 TRAIN_RATIO=0.2
 VAL_RATIO=0.3
 seed=42 # 随机种子
@@ -57,6 +58,13 @@ def build_subset_dataset():
     """
     构建小数据集目录，并生成 data.yaml。
     """
+    if DST_ROOT.exists():
+        print(f"删除旧数据集：{DST_ROOT}")
+        shutil.rmtree(DST_ROOT)  # 递归删除整个文件夹
+
+    sample_split("train", TRAIN_RATIO, seed)    # 抽样训练集
+    sample_split("valid", VAL_RATIO, seed)
+
     data_yaml = {
         "path": str(DST_ROOT.absolute()),
         "train": "train/images",
@@ -70,21 +78,20 @@ def build_subset_dataset():
         yaml.dump(data_yaml, f, allow_unicode=True, sort_keys=False)
 
     print(f"已生成小数据集：{DST_ROOT}")
+    NOW_ROOT=DST_ROOT # 更新当前数据集目录为小数据集
 
 
 
 
 if __name__=="__main__":
-    if DST_ROOT.exists():
-        print(f"删除旧数据集：{DST_ROOT}")
-        shutil.rmtree(DST_ROOT)  # 递归删除整个文件夹
-    sample_split("train", TRAIN_RATIO, seed)
-    sample_split("valid", VAL_RATIO, seed)
-    build_subset_dataset()
+    NOW_ROOT=SRC_ROOT
+    # build_subset_dataset()
+    print(f"当前数据集目录：{NOW_ROOT}")
+    print(str(NOW_ROOT / "data.yaml"))
     model = YOLO("yolo26n.pt")
     model.train(
-        data=str(DST_ROOT / "data.yaml"),
-        epochs=50,
+        data=str(NOW_ROOT / "data.yaml"),
+        epochs=20,
         imgsz=640,       # 输入图像大小
         verbose=False,       # 训练过程不输出详细日志
     )
